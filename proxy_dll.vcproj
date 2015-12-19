@@ -137,10 +137,6 @@
 			>
 		</File>
 		<File
-			RelativePath=".\fonts.cpp"
-			>
-		</File>
-		<File
 			RelativePath=".\header.h"
 			>
 		</File>

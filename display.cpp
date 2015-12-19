@@ -160,10 +160,6 @@ void init( HWND hwnd )
 
 	sse2_supported = IsProcessorFeaturePresent( PF_XMMI64_INSTRUCTIONS_AVAILABLE );
 
-
-	// disable antiAliased fonts
-	HookFonts();
-
 	// create dib_section ( offscreen gdi drawing surface )
 	hbmp = CreateDIBSection( NULL, (BITMAPINFO*) &bmi, DIB_RGB_COLORS, &dib_bits, NULL, 0 );
 	hdc_offscreen = CreateCompatibleDC( NULL );
@@ -183,7 +179,7 @@ void init( HWND hwnd )
 	// init d3d
 	// must not be exclusive, to keep gdi drawing visible 
 	d3d = Direct3DCreate9( D3D_SDK_VERSION );
-    if( d3d == NULL ) goto fail;
+	if( d3d == NULL ) goto fail;
 	hr = d3d->CreateDevice( D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd, D3DCREATE_SOFTWARE_VERTEXPROCESSING, &d3dpp, &device );
 	if( FAILED ( hr ) ) goto fail;	
 	hr = device->GetBackBuffer( 0, 0, D3DBACKBUFFER_TYPE_MONO, &secondary );
@@ -205,8 +201,8 @@ BOOL SetResolution_640x480(void)
 	RtlSecureZeroMemory(&devMode, sizeof(devMode));
 	devMode.dmSize = sizeof(devMode);
 	devMode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT; 
-    devMode.dmPelsWidth  = 640;
-    devMode.dmPelsHeight = 480;
+	devMode.dmPelsWidth  = 640;
+	devMode.dmPelsHeight = 480;
 	if( DISP_CHANGE_SUCCESSFUL == ChangeDisplaySettings(&devMode, CDS_FULLSCREEN) )
 	{
 		return TRUE;
@@ -225,9 +221,7 @@ void d3d_reset(void)
 	{
 		if( SUCCEEDED(  device->GetBackBuffer( 0, 0, D3DBACKBUFFER_TYPE_MONO, &secondary ) ) )
 		{
-			if( d3dpp.BackBufferHeight != 480 ) __asm int 3 //
-			if( d3dpp.BackBufferWidth != 640 ) __asm int 3 //
-
+			; //
 		}
 	}
 	else Sleep( 100 );
@@ -249,7 +243,7 @@ void d3d_blit(void)
 				color_convert( &(((BYTE*)dib_bits)[y*640]), bmi.palette, (DWORD*)((BYTE*)p + rc.Pitch * y ), 640/4 );
 			}
 			secondary->UnlockRect();
-		    
+
 			hr = device->Present(NULL, NULL, NULL, NULL);
 			if( SUCCEEDED( hr ) ) return;
 		}

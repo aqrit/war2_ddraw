@@ -17,6 +17,7 @@ void color_convert( BYTE* src, RGBQUAD* pal, DWORD* dst, DWORD cnt );
 
 // wndproc.cpp
 void HookMainWindow( HWND hwnd );
+void SuperClassSysWindows(void);
 
 // fonts.cpp
 void HookFonts(void);

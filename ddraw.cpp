@@ -1,7 +1,6 @@
+//
 // Implements just enough ddraw to talk to the game
 //
-//
-// 
 
 #include <windows.h>
 #include <ddraw.h> 
@@ -55,7 +54,7 @@ HRESULT __stdcall DirectDrawCreate( GUID* lpGUID, LPDIRECTDRAW* lplpDD, IUnknown
 }
 
 HRESULT __stdcall dd_SetDisplayMode( void* This, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP )
-{ 
+{
 	return 0; 
 }
 

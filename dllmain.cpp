@@ -8,8 +8,14 @@
 #pragma comment( lib, "d3d9" )
 
 #include <windows.h>
+#include "header.h"
 
 BOOL __stdcall DllEntryPoint( HINSTANCE hDll, DWORD dwReason, LPVOID lpvReserved )
 {
-		return TRUE;
+	if( dwReason == DLL_PROCESS_ATTACH )
+	{
+		DisableThreadLibraryCalls( hDll );
+		SuperClassSysWindows();
+	}
+	return TRUE;
 }
