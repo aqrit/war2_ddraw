@@ -45,6 +45,7 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 			SetResolution_640x480();
 			SetWindowPos( hwnd_main, HWND_TOPMOST, 0, 0, 640, 480, SWP_SHOWWINDOW );		
 		}
+		return 0;
 	}
 	return CallWindowProc( Main_Original, hWnd, uMsg, wParam, lParam );
 }

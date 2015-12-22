@@ -2,7 +2,7 @@
 #include <d3d9.h>
 #include "header.h"
 
-BOOL sse2_supported = FALSE;
+
 
 HWND hwnd_main = NULL;
 
@@ -11,6 +11,7 @@ BOOL IsWindowed = FALSE;
 LPDIRECT3D9 d3d = NULL;
 LPDIRECT3DDEVICE9 device = NULL;
 LPDIRECT3DSURFACE9 secondary = NULL;
+ __declspec(align(128)) BYTE client_bits[640*480];
 
 void* dib_bits;
 HDC hdc_offscreen;
@@ -58,64 +59,49 @@ void d3d_blit(void);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void ToScreen()
-{
-	HDC hdc;
-	DWORD i;
-	DWORD* p;
-	SDLGDIALOG_CACHE_ENTRY* ce;
-
-	if( SDlgDialog_count == 0 ) return d3d_blit(); // ddraw only
-	
-	// else mixed gdi/ddraw screen
-	// blast it out to all top-level SDlgDialog windows... the real wtf
-	for( i = 0; i < SDlgDialog_count; i++ ){
-		ce = &SDlgDialog_cache[i];
-		hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
-		GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
-			hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
-		ReleaseDC( ce->hwnd, hdc );
-	}
-
-	// erase
-	if( sse2_supported )
-	{
-		__asm{
-			mov eax, dib_bits
-			pcmpeqw xmm0,xmm0 
-			psllw xmm0,1 
-			packsswb xmm0,xmm0 
-			mov ecx, 640*480/128
-			align 8
-		lbl_loop:
-			movntdq 0[eax], xmm0
-			movntdq 16[eax], xmm0
-			movntdq 32[eax], xmm0
-			movntdq 48[eax], xmm0
-			movntdq 64[eax], xmm0
-			movntdq 80[eax], xmm0
-			movntdq 96[eax], xmm0
-			movntdq 112[eax], xmm0
-			add eax,128
-			dec ecx
-			jnz lbl_loop
-		}
-	}
-	else{ // sse2 not supported
-		p = (DWORD*) dib_bits;
-		for( i = 0; i < 640 * 480 / 4; i++ ) p [ i ] = 0xFEFEFEFE;
-	}
-}
-
-
 HRESULT lock( LONG* pitch, void** surf_bits ){
-	*surf_bits = dib_bits;
+	
+	*surf_bits = ( SDlgDialog_count != 0 ) ?  dib_bits : client_bits;
 	*pitch = 640;
 	return 0;
 }
 
+
 void unlock( void* surface ){
-	ToScreen();
+	HDC hdc;
+	DWORD i;
+	SDLGDIALOG_CACHE_ENTRY* ce;
+	D3DLOCKED_RECT rc;
+	HRESULT hr;
+
+	if( surface == dib_bits ){
+		composite( (BYTE*)dib_bits, client_bits );
+	}
+
+	if( secondary != NULL ){
+		hr = secondary->LockRect( &rc, NULL, 0 );
+		if( SUCCEEDED( hr ) ){
+			for( int i = 0; i < 480; i++ ){ // for each scanline
+				color_convert( &(((BYTE*)client_bits)[i*640]), bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
+			}
+			secondary->UnlockRect();
+			hr = device->Present(NULL, NULL, NULL, NULL);
+		}
+	}
+	if( FAILED( hr ) ) return d3d_reset();
+
+	if( surface == dib_bits ){
+		// blast it out to all top-level SDlgDialog windows... the real wtf
+		for( i = 0; i < SDlgDialog_count; i++ ){
+			ce = &SDlgDialog_cache[i];
+			hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
+			GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
+				hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
+			ReleaseDC( ce->hwnd, hdc );
+		}
+		//
+		erase( (BYTE*)dib_bits );
+	}
 }
 
 void cleanup( void )
@@ -137,7 +123,8 @@ void set_palette( PALETTEENTRY* colors ){
 	clear_color = *((DWORD*)&colors[254]) & 0x00FFFFFF;
 	SetDIBColorTable( hdc_offscreen, 0, 256, bmi.palette );
 
-	ToScreen(); // animate palette
+	// animate palette
+	unlock( client_bits );
 
 	// HACK // 
 	// not drawing main menu after movie? 
@@ -223,27 +210,3 @@ void d3d_reset(void)
 	else Sleep( 100 );
 }
 
-void d3d_blit(void)
-{
-	D3DLOCKED_RECT rc;
-	HRESULT hr;
-
-	if( secondary != NULL )
-	{
-		hr = secondary->LockRect( &rc, NULL, 0 );
-		if( SUCCEEDED( hr ) )
-		{
-			BYTE* p = (BYTE*)rc.pBits;
-			for( int y = 0; y < 480; y++ )
-			{
-				color_convert( &(((BYTE*)dib_bits)[y*640]), bmi.palette, (DWORD*)((BYTE*)p + rc.Pitch * y ), 640/4 );
-			}
-			secondary->UnlockRect();
-
-			hr = device->Present(NULL, NULL, NULL, NULL);
-			if( SUCCEEDED( hr ) ) return;
-		}
-	}
-	// failure of some kind
-	d3d_reset();
-}

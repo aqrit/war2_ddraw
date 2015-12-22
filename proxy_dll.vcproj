@@ -113,10 +113,6 @@
 	</References>
 	<Files>
 		<File
-			RelativePath=".\color_convert.cpp"
-			>
-		</File>
-		<File
 			RelativePath=".\ddraw.cpp"
 			>
 		</File>
@@ -138,6 +134,10 @@
 		</File>
 		<File
 			RelativePath=".\header.h"
+			>
+		</File>
+		<File
+			RelativePath=".\image_helpers.cpp"
 			>
 		</File>
 		<File
