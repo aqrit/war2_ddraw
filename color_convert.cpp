@@ -47,5 +47,3 @@ color_convert( BYTE* src, RGBQUAD* pal, DWORD* dst, DWORD cnt )
 		ret
 	}
 }
-
-

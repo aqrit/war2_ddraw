@@ -4,6 +4,9 @@
 #include "header.h"
 
 
+DWORD SDlgDialog_count = 0;
+SDLGDIALOG_CACHE_ENTRY SDlgDialog_cache[16];
+
 WNDPROC Main_Original = NULL;
 WNDPROC SDlgDialog_Original = NULL;
 WNDPROC SDlgStatic_Original = NULL;
@@ -13,7 +16,7 @@ WNDPROC Listbox_Original = NULL;
 WNDPROC Combobox_Original = NULL;
 // WNDPROC Scrollbar_Original = NULL;
 
-void InstallLateHooks(void);
+void HookLateWndProcs(void);
 
 // touchy
 long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
@@ -46,12 +49,64 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	return CallWindowProc( Main_Original, hWnd, uMsg, wParam, lParam );
 }
 
-// todo: track SDlgDialog windows, these are the windows that use gdi drawing
+// track SDlgDialog windows, these are the windows that use gdi drawing
 LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
-	// hack // force redraw after leaving "player profile" screen
-	if( msg == WM_DESTROY ) RedrawWindow( NULL, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN );
-	
+	WINDOWPOS* wndpos;
+	CREATESTRUCT* cs;
+	DWORD i;
+
+	switch( msg )
+	{
+		case WM_CREATE:
+		{
+			cs = (CREATESTRUCT*)lParam;
+			if( SDlgDialog_count < _countof( SDlgDialog_cache ) ){
+				SDlgDialog_cache[SDlgDialog_count].hwnd = hwnd;
+				SDlgDialog_cache[SDlgDialog_count].cy = cs->cy;
+				SDlgDialog_cache[SDlgDialog_count].cx = cs->cx;
+				SDlgDialog_cache[SDlgDialog_count].y = cs->y;
+				SDlgDialog_cache[SDlgDialog_count].x = cs->x;
+				SDlgDialog_count++;
+			}
+			break;
+		}
+		case WM_WINDOWPOSCHANGED: 
+		{
+			wndpos = (WINDOWPOS*) lParam;
+			for( i = 0; i < SDlgDialog_count; i++ ){
+				if( hwnd == SDlgDialog_cache[i].hwnd ){
+					SDlgDialog_cache[i].cy = wndpos->cy;
+					SDlgDialog_cache[i].cx = wndpos->cx;
+					SDlgDialog_cache[i].y = wndpos->y;
+					SDlgDialog_cache[i].x = wndpos->x;
+					break;
+				}
+			}
+			break;
+		}
+		case WM_DESTROY:
+		{
+			for( i = 0; i < SDlgDialog_count; i++ ){
+				if( hwnd == SDlgDialog_cache[i].hwnd ){
+					SDlgDialog_count--;
+					if( i != SDlgDialog_count ){
+						SDlgDialog_cache[i].hwnd = SDlgDialog_cache[SDlgDialog_count].hwnd;
+						SDlgDialog_cache[i].cy = SDlgDialog_cache[SDlgDialog_count].cy;
+						SDlgDialog_cache[i].cx = SDlgDialog_cache[SDlgDialog_count].cx;
+						SDlgDialog_cache[i].y = SDlgDialog_cache[SDlgDialog_count].y;
+						SDlgDialog_cache[i].x = SDlgDialog_cache[SDlgDialog_count].x;
+					}
+					break;
+				}
+			}
+		
+			// hack //
+			// force redraw after leaving "player profile" screen
+			RedrawWindow( NULL, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN );
+			break;
+		}
+	}
 	return CallWindowProc( SDlgDialog_Original, hwnd, msg, wParam, lParam );
 }
 
@@ -61,7 +116,7 @@ LRESULT __stdcall Font_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 	LOGFONTA lf;
 
 	if( msg == WM_CREATE ){
-		if( SDlgDialog_Original == NULL ) InstallLateHooks();
+		if( SDlgDialog_Original == NULL ) HookLateWndProcs();
 	}
 
 	if( msg == WM_SETFONT ){
@@ -97,19 +152,60 @@ LRESULT __stdcall Combobox_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 	return Font_Hookproc( hwnd, msg, wParam, lParam, Combobox_Original );
 }
 
-// subclass
-void HookMainWindow( HWND hwnd ){
-	Main_Original = (WNDPROC) SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&Main_Hookproc );
+
+// global subclass
+void HookLateWndProcs(void){
+	HWND hwnd;
+	RECT rc;
+		
+	hwnd = FindWindowEx( HWND_DESKTOP, NULL, "SDlgDialog", NULL );
+	if( hwnd != NULL ){
+		SDlgDialog_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgDialog_Hookproc );		
+		do{
+			SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&SDlgDialog_Hookproc );
+			if( GetWindowRect( hwnd, &rc ) ){
+				if( SDlgDialog_count < _countof( SDlgDialog_cache ) ){
+					SDlgDialog_cache[SDlgDialog_count].hwnd = hwnd;
+					SDlgDialog_cache[SDlgDialog_count].cy = rc.bottom - rc.top;
+					SDlgDialog_cache[SDlgDialog_count].cx = rc.right - rc.left;
+					SDlgDialog_cache[SDlgDialog_count].y = rc.top;
+					SDlgDialog_cache[SDlgDialog_count].x = rc.left;
+					SDlgDialog_count++;
+				}
+			}
+			hwnd = FindWindowEx( HWND_DESKTOP, hwnd, "SDlgDialog", NULL );
+		} while( hwnd != NULL );
+
+		hwnd = FindWindowEx( HWND_DESKTOP, NULL, "SDlgStatic", NULL );
+		if( hwnd == NULL ){
+			hwnd = CreateWindow( "SDlgStatic", 0, WS_POPUP, 0, 0, 1, 1, NULL, NULL, 0, NULL );
+			if( hwnd != NULL ){
+				SDlgStatic_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgStatic_Hookproc );
+				DestroyWindow( hwnd );
+			}
+			// else error
+		}
+		else{ // not reached probably
+			SDlgStatic_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgStatic_Hookproc );
+			do{
+				SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&SDlgStatic_Hookproc );
+				// todo: InvalidateRect( hwnd, NULL, TRUE ); // ???
+				hwnd = FindWindowEx( HWND_DESKTOP, hwnd, "SDlgStatic", NULL );
+			} while( hwnd != NULL );
+		}
+	}
 }
 
-// superclass 
-void SuperClassSysWindows(void)
-{
+void HookWndProcs( HWND hwnd ){
 	HINSTANCE hInst;
 	WNDCLASS wc;
 
 	hInst = GetModuleHandle( NULL );
 
+	// subclass
+	Main_Original = (WNDPROC) SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&Main_Hookproc );
+
+	// superclass 
 	GetClassInfo( NULL, "Button", &wc );
 	wc.hInstance = hInst;
 	Button_Original = wc.lpfnWndProc;
@@ -133,37 +229,4 @@ void SuperClassSysWindows(void)
 	Combobox_Original = wc.lpfnWndProc;
 	wc.lpfnWndProc = Combobox_Hookproc;
 	RegisterClass( &wc );
-}
-
-// global subclass
-void InstallLateHooks(void)
-{
-	HWND hwnd;
-		
-	hwnd = FindWindowEx( HWND_DESKTOP, NULL, "SDlgDialog", NULL );
-	if( hwnd != NULL ){
-		SDlgDialog_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgDialog_Hookproc );		
-		do{
-			SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&SDlgDialog_Hookproc );
-			hwnd = FindWindowEx( HWND_DESKTOP, hwnd, "SDlgDialog", NULL );
-		} while( hwnd != NULL );
-
-		hwnd = FindWindowEx( HWND_DESKTOP, NULL, "SDlgStatic", NULL );
-		if( hwnd == NULL ){
-			hwnd = CreateWindow( "SDlgStatic", 0, WS_POPUP, 0, 0, 1, 1, NULL, NULL, 0, NULL );
-			if( hwnd != NULL ){
-				SDlgStatic_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgStatic_Hookproc );
-				DestroyWindow( hwnd );
-			}
-			// else error
-		}
-		else{ // not reached probably
-			SDlgStatic_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgStatic_Hookproc );
-			do{
-				SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&SDlgStatic_Hookproc );
-				// todo: InvalidateRect( hwnd, NULL, TRUE ); // ???
-				hwnd = FindWindowEx( HWND_DESKTOP, hwnd, "SDlgStatic", NULL );
-			} while( hwnd != NULL );
-		}
-	}
 }

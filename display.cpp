@@ -60,27 +60,22 @@ void d3d_blit(void);
 
 void ToScreen()
 {
-	HWND hwnd;
-	RECT rc;
 	HDC hdc;
-	int i;
+	DWORD i;
 	DWORD* p;
+	SDLGDIALOG_CACHE_ENTRY* ce;
 
-	hwnd = FindWindowEx( HWND_DESKTOP, NULL, "SDlgDialog", NULL ); // detect mixed gdi/ddraw screen
-	if( hwnd == NULL ) return d3d_blit(); // ddraw only
-
+	if( SDlgDialog_count == 0 ) return d3d_blit(); // ddraw only
+	
+	// else mixed gdi/ddraw screen
 	// blast it out to all top-level SDlgDialog windows... the real wtf
-	do
-	{ 	
-		GetWindowRect( hwnd, &rc );
-		hdc = GetDCEx( hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
-		GdiTransparentBlt( hdc, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
-				hdc_offscreen, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
-				clear_color 
-			);
-		ReleaseDC( hwnd, hdc );
-		hwnd = FindWindowEx( HWND_DESKTOP, hwnd, "SDlgDialog", NULL );
-	} while( hwnd != NULL );
+	for( i = 0; i < SDlgDialog_count; i++ ){
+		ce = &SDlgDialog_cache[i];
+		hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
+		GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
+			hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
+		ReleaseDC( ce->hwnd, hdc );
+	}
 
 	// erase
 	if( sse2_supported )
@@ -91,6 +86,7 @@ void ToScreen()
 			psllw xmm0,1 
 			packsswb xmm0,xmm0 
 			mov ecx, 640*480/128
+			align 8
 		lbl_loop:
 			movntdq 0[eax], xmm0
 			movntdq 16[eax], xmm0
@@ -166,8 +162,8 @@ void init( HWND hwnd )
 	hbmp_old = (HBITMAP) SelectObject( hdc_offscreen, hbmp );
 	if( ( hbmp == NULL ) || ( hbmp_old == NULL ) ) goto fail;
 
-	// sub-class main window to help detect focus loss
-	HookMainWindow( hwnd );
+	// 
+	HookWndProcs( hwnd );
 
 	// needed on bnet screens 
 	// because the sibling windows are not scaled to new resolutions. 

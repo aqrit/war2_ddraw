@@ -15,7 +15,6 @@ BOOL __stdcall DllEntryPoint( HINSTANCE hDll, DWORD dwReason, LPVOID lpvReserved
 	if( dwReason == DLL_PROCESS_ATTACH )
 	{
 		DisableThreadLibraryCalls( hDll );
-		SuperClassSysWindows();
 	}
 	return TRUE;
 }
