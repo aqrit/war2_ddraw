@@ -3,9 +3,17 @@
 #include <windows.h>
 #include "header.h"
 
+struct FONT_CACHE_ENTRY {
+	LOGFONTA lf;
+	HFONT hfont;
+};
 
 DWORD SDlgDialog_count = 0;
 SDLGDIALOG_CACHE_ENTRY SDlgDialog_cache[16];
+
+DWORD font_count = 0;
+FONT_CACHE_ENTRY font_cache[24]; // to limit leaks
+
 
 WNDPROC Main_Original = NULL;
 WNDPROC SDlgDialog_Original = NULL;
@@ -108,13 +116,15 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 			break;
 		}
 	}
-	return CallWindowProc( SDlgDialog_Original, hwnd, msg, wParam, lParam );
+	return SDlgDialog_Original( hwnd, msg, wParam, lParam );
 }
 
 // disable anti-aliased fonts
+#pragma intrinsic( memcmp, memcpy )
 LRESULT __stdcall Font_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, WNDPROC WndProcA_Original )
 {
 	LOGFONTA lf;
+	DWORD i;
 
 	if( msg == WM_CREATE ){
 		if( SDlgDialog_Original == NULL ) HookLateWndProcs();
@@ -124,13 +134,26 @@ LRESULT __stdcall Font_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 		if( wParam != NULL ){
 			if( GetObject( (HFONT)wParam, sizeof(lf), &lf ) ){
 				if( lf.lfQuality != NONANTIALIASED_QUALITY ){
-					lf.lfQuality = NONANTIALIASED_QUALITY;
-					wParam = (WPARAM) CreateFontIndirect( &lf ); // leak here
+					for( i = 0; i < font_count; i++ ){
+						if( ! memcmp( &font_cache[i].lf, &lf, sizeof(lf) ) ){
+							wParam = (WPARAM) font_cache[i].hfont;
+							return WndProcA_Original( hwnd, msg, wParam, lParam );
+						}
+					}
+					if( font_count < _countof( font_cache ) ){
+						memcpy( &font_cache[font_count].lf, &lf, sizeof(lf) );
+						lf.lfQuality = NONANTIALIASED_QUALITY;
+						wParam = (WPARAM) CreateFontIndirect( &lf ); 
+						if( wParam != NULL ){
+							font_cache[font_count].hfont = (HFONT)wParam;
+							font_count++;
+						}
+					}
 				}
 			}
 		}
 	}
-	return CallWindowProc( WndProcA_Original, hwnd, msg, wParam, lParam );
+	return WndProcA_Original( hwnd, msg, wParam, lParam );
 }
 
 LRESULT __stdcall SDlgStatic_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam ){
