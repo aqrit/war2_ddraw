@@ -2,7 +2,7 @@
 #include <d3d9.h>
 #include "header.h"
 
-
+BOOL import_gdi_bits = FALSE;
 
 HWND hwnd_main = NULL;
 
@@ -11,9 +11,10 @@ BOOL IsWindowed = FALSE;
 LPDIRECT3D9 d3d = NULL;
 LPDIRECT3DDEVICE9 device = NULL;
 LPDIRECT3DSURFACE9 secondary = NULL;
- __declspec(align(128)) BYTE client_bits[640*480];
 
-void* dib_bits;
+ __declspec(align(128)) BYTE client_bits[640*480];
+BYTE* dib_bits;
+
 HDC hdc_offscreen;
 HBITMAP hbmp_old;
 COLORREF clear_color;
@@ -35,12 +36,6 @@ D3DPRESENT_PARAMETERS d3dpp = {
 	d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE // D3DPRESENT_INTERVAL_ONE for vsync?
 };
 
-struct BITMAPINFO256 
-{
-	BITMAPINFOHEADER h;
-	RGBQUAD palette[256];
-};
-
 BITMAPINFO256 bmi = {
 	bmi.h.biSize = sizeof( BITMAPINFOHEADER ), 
 	bmi.h.biWidth = 640,
@@ -59,10 +54,29 @@ void d3d_blit(void);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-HRESULT lock( LONG* pitch, void** surf_bits ){
-	
-	*surf_bits = ( SDlgDialog_count != 0 ) ?  dib_bits : client_bits;
+
+HRESULT lock( LONG* pitch, void** surf_bits )
+{
+	SDLGDIALOG_CACHE_ENTRY* ce;
+	HDC hdc;
+	DWORD i;
+
 	*pitch = 640;
+	*surf_bits = dib_bits;
+
+	if( ( SDlgDialog_count != 0 ) && ( import_gdi_bits != FALSE ) ){
+		for( i = 0; i < SDlgDialog_count; i++ ){ 
+			ce = &SDlgDialog_cache[i];
+			hdc = GetDC( ce->hwnd );
+			BitBlt( hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, hdc, 0, 0, SRCCOPY );
+			ReleaseDC( ce->hwnd, hdc );
+		}
+	}
+
+//	if( SDlgDialog_count != 0 ){
+	//	if( 0x8001 & GetAsyncKeyState( VK_SNAPSHOT )){ // if a screenshot is wanted
+// ..... } } 
+		
 	return 0;
 }
 
@@ -74,33 +88,41 @@ void unlock( void* surface ){
 	D3DLOCKED_RECT rc;
 	HRESULT hr;
 
-	if( surface == dib_bits ){
-		composite( (BYTE*)dib_bits, client_bits );
-	}
-
 	if( secondary != NULL ){
 		hr = secondary->LockRect( &rc, NULL, 0 );
 		if( SUCCEEDED( hr ) ){
-			for( int i = 0; i < 480; i++ ){ // for each scanline
-				color_convert( &(((BYTE*)client_bits)[i*640]), bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
+			if( SDlgDialog_count != 0 ){
+				if( import_gdi_bits != FALSE ){
+					for( i = 0; i < SDlgDialog_count; i++ ){
+						ce = &SDlgDialog_cache[i];
+						hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
+						BitBlt( hdc, 0, 0, ce->cx, ce->cy, hdc_offscreen, ce->x, ce->y, SRCCOPY );
+						ReleaseDC( ce->hwnd, hdc );
+					}
+					// color convert
+					for( int i = 0; i < 480; i++ ){ // for each scanline
+						color_convert( &(((BYTE*)dib_bits)[i*640]), bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
+					}
+
+				} else {
+					for( i = 0; i < SDlgDialog_count; i++ ){
+						ce = &SDlgDialog_cache[i];
+						hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
+						GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
+							hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
+						ReleaseDC( ce->hwnd, hdc );
+					}
+					multiblt( rc.Pitch, (DWORD*) rc.pBits );
+				} 
+			} else {
+				for( int i = 0; i < 480; i++ ){ // for each scanline
+					color_convert( &dib_bits[i*640], bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
+				}
 			}
 			secondary->UnlockRect();
 			hr = device->Present(NULL, NULL, NULL, NULL);
 		}
-	}
-	if( FAILED( hr ) ) return d3d_reset();
-
-	if( surface == dib_bits ){
-		// blast it out to all top-level SDlgDialog windows... the real wtf
-		for( i = 0; i < SDlgDialog_count; i++ ){
-			ce = &SDlgDialog_cache[i];
-			hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
-			GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
-				hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
-			ReleaseDC( ce->hwnd, hdc );
-		}
-		//
-		erase( (BYTE*)dib_bits );
+		if( FAILED( hr ) ) return d3d_reset();
 	}
 }
 
@@ -144,7 +166,7 @@ void init( HWND hwnd )
 	sse2_supported = IsProcessorFeaturePresent( PF_XMMI64_INSTRUCTIONS_AVAILABLE );
 
 	// create dib_section ( offscreen gdi drawing surface )
-	hbmp = CreateDIBSection( NULL, (BITMAPINFO*) &bmi, DIB_RGB_COLORS, &dib_bits, NULL, 0 );
+	hbmp = CreateDIBSection( NULL, (BITMAPINFO*) &bmi, DIB_RGB_COLORS, (void**) &dib_bits, NULL, 0 );
 	hdc_offscreen = CreateCompatibleDC( NULL );
 	hbmp_old = (HBITMAP) SelectObject( hdc_offscreen, hbmp );
 	if( ( hbmp == NULL ) || ( hbmp_old == NULL ) ) goto fail;

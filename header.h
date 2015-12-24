@@ -8,9 +8,18 @@ struct SDLGDIALOG_CACHE_ENTRY {
 	DWORD x;
 };
 
+struct BITMAPINFO256 
+{
+	BITMAPINFOHEADER h;
+	RGBQUAD palette[256];
+};
+
 // display.cpp
 extern HWND hwnd_main;
 extern BOOL IsWindowed;
+extern BYTE* dib_bits;
+extern BYTE client_bits[640*480];
+extern BITMAPINFO256 bmi;
 //
 void init( HWND hwnd ); 
 void cleanup( void );
@@ -23,8 +32,7 @@ void d3d_reset(void);
 // image_helpers.cpp
 extern BOOL sse2_supported;
 void __cdecl color_convert( BYTE* src, RGBQUAD* pal, DWORD* dst, DWORD cnt );
-void __cdecl erase( BYTE* src );
-void __cdecl composite( BYTE* src, BYTE* dst );
+void __stdcall multiblt( DWORD pitch, DWORD* d3d_bits );
 
 // wndproc.cpp
 void HookWndProcs( HWND hwnd );
