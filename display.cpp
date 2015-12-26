@@ -178,7 +178,7 @@ void init( HWND hwnd )
 
 	// needed on bnet screens 
 	// because the sibling windows are not scaled to new resolutions. 
-	if( SetResolution_640x480() == FALSE ) goto fail;
+	SetResolution_640x480();
 
 	// the window size is originally the size of the desktop...
 	SetWindowPos( hwnd, HWND_TOP, 0, 0, 640, 480, SWP_NOOWNERZORDER | SWP_NOZORDER );
