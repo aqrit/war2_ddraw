@@ -1,8 +1,6 @@
 #include <windows.h>
 #include "header.h"
 
-BOOL sse2_supported;
-
 // convert scanline from 8bpp to 32bpp
 __declspec(naked) void __cdecl 
 color_convert( BYTE* src, RGBQUAD* pal, DWORD* dst, DWORD cnt )
@@ -138,25 +136,25 @@ L2:
 	movzx ebx, byte ptr 1[esi]
 	movzx ecx, byte ptr 2[esi]
 	movzx edx, byte ptr 3[esi]
+	add esi, 4
 	// read colors from palette
 	mov eax, [ebp+eax*4] 
 	mov ebx, [ebp+ebx*4] 
 	mov ecx, [ebp+ecx*4] 
-	mov edx, [ebp+edx*4] 
+	mov edx, [ebp+edx*4]
+	sub DWORD PTR [esp], 1 // loop cnt
 	// write colors to dst
 	mov   [edi], eax
 	mov  4[edi], ebx
 	mov  8[edi], ecx
 	mov 12[edi], edx
-	// upkeep
-	sub DWORD PTR [esp], 1
-	lea esi, [esi+4]
+	//
 	lea edi, [edi+16]
 	jnz L2 // do 64 bytes
 	mov ebp, 36[esp]
 	sub DWORD PTR 4[esp], 1
 	jnz L1 // do 640 bytes
-	add edi, 32[esp] // paddding at end of scanline
+	add edi, 32[esp] // padding at end of scanline
 	sub DWORD PTR 8[esp], 1
 	mov DWORD PTR 4[esp], 640/64	
 	jnz L1 // do 480 scanline

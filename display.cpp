@@ -163,7 +163,9 @@ void init( HWND hwnd )
 	hwnd_main = hwnd;
 	d3dpp.hDeviceWindow = hwnd;
 
-	sse2_supported = IsProcessorFeaturePresent( PF_XMMI64_INSTRUCTIONS_AVAILABLE );
+	if( ! IsProcessorFeaturePresent( PF_XMMI64_INSTRUCTIONS_AVAILABLE ) ){
+		import_gdi_bits = TRUE; // sse2 not supported use only gdi instead
+	}
 
 	// create dib_section ( offscreen gdi drawing surface )
 	hbmp = CreateDIBSection( NULL, (BITMAPINFO*) &bmi, DIB_RGB_COLORS, (void**) &dib_bits, NULL, 0 );

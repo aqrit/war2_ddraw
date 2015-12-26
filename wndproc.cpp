@@ -24,23 +24,61 @@ WNDPROC Listbox_Original = NULL;
 WNDPROC Combobox_Original = NULL;
 // WNDPROC Scrollbar_Original = NULL;
 
-void HookLateWndProcs(void);
+LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
+LRESULT __stdcall SDlgStatic_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
 
 // touchy
+#pragma intrinsic( memcmp )
 long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 {
-	if( uMsg == WM_ACTIVATEAPP ){  // gain/lost focus from/to another app
-		if( IsWindowed == FALSE ){ // if fullscreen
-			if( wParam == FALSE ){
-				ShowWindow( hWnd, SW_MINIMIZE );
-				ChangeDisplaySettings( NULL, 0 );
+	HWND hwnd_temp;
+	char class_name[12];
+	RECT rc;
+
+	switch( uMsg )
+	{
+		case WM_ACTIVATEAPP: // gain/lost focus from/to another app
+		{
+			if( IsWindowed == FALSE ){ // if fullscreen
+				if( wParam == FALSE ){
+					ShowWindow( hWnd, SW_MINIMIZE );
+					ChangeDisplaySettings( NULL, 0 );
+				}
+				else{
+					ShowWindow( hWnd, SW_RESTORE );
+					SetResolution_640x480();
+				}
 			}
-			else{
-				ShowWindow( hWnd, SW_RESTORE );
-				SetResolution_640x480();
+			break;
+		}
+		case WM_ACTIVATE:
+		{ 
+			if( SDlgDialog_Original == NULL ){ // set late hooks "global subclass"
+				hwnd_temp = (HWND)lParam;
+				if( GetClassName( hwnd_temp, class_name, 11 ) ){
+					if( ! memcmp( class_name, "SDlgDialog", 11 ) ){
+						SDlgDialog_Original = (WNDPROC) SetClassLong( hwnd_temp, GCL_WNDPROC, (DWORD)SDlgDialog_Hookproc );		
+						SetWindowLong( hwnd_temp, GWL_WNDPROC, (LONG)&SDlgDialog_Hookproc );
+						if( GetWindowRect( hwnd_temp, &rc ) ){
+							SDlgDialog_cache[SDlgDialog_count].hwnd = hwnd_temp;
+							SDlgDialog_cache[SDlgDialog_count].cy = rc.bottom - rc.top;
+							SDlgDialog_cache[SDlgDialog_count].cx = rc.right - rc.left;
+							SDlgDialog_cache[SDlgDialog_count].y = rc.top;
+							SDlgDialog_cache[SDlgDialog_count].x = rc.left;
+							SDlgDialog_count = 1;
+						}
+						hwnd_temp = CreateWindow( "SDlgStatic", 0, WS_POPUP, 0, 0, 1, 1, NULL, NULL, 0, NULL );
+						if( hwnd_temp != NULL ){
+							SDlgStatic_Original = (WNDPROC) SetClassLong( hwnd_temp, GCL_WNDPROC, (DWORD)SDlgStatic_Hookproc );
+							DestroyWindow( hwnd_temp );
+						}
+					}
+				}
 			}
+			break;
 		}
 	}
+
 	if( ( uMsg == WM_SYSKEYDOWN ) && (wParam == VK_RETURN) ){ // alt + enter 
 		// note: why doesn't it work correctly with out SetWindowPos???
 		if( IsWindowed == FALSE ){
@@ -55,6 +93,7 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 		}
 		return 0;
 	}
+	
 	return CallWindowProc( Main_Original, hWnd, uMsg, wParam, lParam );
 }
 
@@ -78,6 +117,11 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 				SDlgDialog_cache[SDlgDialog_count].x = cs->x;
 				SDlgDialog_count++;
 			}
+
+			for( i = 0; i < SDlgDialog_count; i++ ){
+				InvalidateRect( SDlgDialog_cache[i].hwnd, NULL, TRUE );
+			}
+
 			break;
 		}
 		case WM_WINDOWPOSCHANGED: 
@@ -96,8 +140,11 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 		}
 		case WM_DESTROY:
 		{
+			ShowWindow( hwnd, SW_HIDE );
 			for( i = 0; i < SDlgDialog_count; i++ ){
-				if( hwnd == SDlgDialog_cache[i].hwnd ){
+				if( hwnd != SDlgDialog_cache[i].hwnd ){
+					InvalidateRect( SDlgDialog_cache[i].hwnd, NULL, TRUE );
+				} else {
 					SDlgDialog_count--;
 					if( i != SDlgDialog_count ){
 						SDlgDialog_cache[i].hwnd = SDlgDialog_cache[SDlgDialog_count].hwnd;
@@ -106,13 +153,8 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 						SDlgDialog_cache[i].y = SDlgDialog_cache[SDlgDialog_count].y;
 						SDlgDialog_cache[i].x = SDlgDialog_cache[SDlgDialog_count].x;
 					}
-					break;
-				}
+				} 
 			}
-		
-			// hack //
-			// force redraw after leaving "player profile" screen
-			RedrawWindow( NULL, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN );
 			break;
 		}
 	}
@@ -125,10 +167,6 @@ LRESULT __stdcall Font_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 {
 	LOGFONTA lf;
 	DWORD i;
-
-	if( msg == WM_CREATE ){
-		if( SDlgDialog_Original == NULL ) HookLateWndProcs();
-	}
 
 	if( msg == WM_SETFONT ){
 		if( wParam != NULL ){
@@ -176,49 +214,6 @@ LRESULT __stdcall Combobox_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 	return Font_Hookproc( hwnd, msg, wParam, lParam, Combobox_Original );
 }
 
-
-// global subclass
-void HookLateWndProcs(void){
-	HWND hwnd;
-	RECT rc;
-		
-	hwnd = FindWindowEx( HWND_DESKTOP, NULL, "SDlgDialog", NULL );
-	if( hwnd != NULL ){
-		SDlgDialog_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgDialog_Hookproc );		
-		do{
-			SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&SDlgDialog_Hookproc );
-			if( GetWindowRect( hwnd, &rc ) ){
-				if( SDlgDialog_count < _countof( SDlgDialog_cache ) ){
-					SDlgDialog_cache[SDlgDialog_count].hwnd = hwnd;
-					SDlgDialog_cache[SDlgDialog_count].cy = rc.bottom - rc.top;
-					SDlgDialog_cache[SDlgDialog_count].cx = rc.right - rc.left;
-					SDlgDialog_cache[SDlgDialog_count].y = rc.top;
-					SDlgDialog_cache[SDlgDialog_count].x = rc.left;
-					SDlgDialog_count++;
-				}
-			}
-			hwnd = FindWindowEx( HWND_DESKTOP, hwnd, "SDlgDialog", NULL );
-		} while( hwnd != NULL );
-
-		hwnd = FindWindowEx( HWND_DESKTOP, NULL, "SDlgStatic", NULL );
-		if( hwnd == NULL ){
-			hwnd = CreateWindow( "SDlgStatic", 0, WS_POPUP, 0, 0, 1, 1, NULL, NULL, 0, NULL );
-			if( hwnd != NULL ){
-				SDlgStatic_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgStatic_Hookproc );
-				DestroyWindow( hwnd );
-			}
-			// else error
-		}
-		else{ // not reached probably
-			SDlgStatic_Original = (WNDPROC) SetClassLong( hwnd, GCL_WNDPROC, (DWORD)SDlgStatic_Hookproc );
-			do{
-				SetWindowLong( hwnd, GWL_WNDPROC, (LONG)&SDlgStatic_Hookproc );
-				// todo: InvalidateRect( hwnd, NULL, TRUE ); // ???
-				hwnd = FindWindowEx( HWND_DESKTOP, hwnd, "SDlgStatic", NULL );
-			} while( hwnd != NULL );
-		}
-	}
-}
 
 void HookWndProcs( HWND hwnd ){
 	HINSTANCE hInst;

@@ -30,7 +30,6 @@ BOOL SetResolution_640x480(void);
 void d3d_reset(void);
 
 // image_helpers.cpp
-extern BOOL sse2_supported;
 void __cdecl color_convert( BYTE* src, RGBQUAD* pal, DWORD* dst, DWORD cnt );
 void __stdcall multiblt( DWORD pitch, DWORD* d3d_bits );
 
