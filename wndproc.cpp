@@ -34,6 +34,7 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	HWND hwnd_temp;
 	char class_name[12];
 	RECT rc;
+	WINDOWPOS* wndpos;
 
 	switch( uMsg )
 	{
@@ -76,24 +77,36 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 				}
 			}
 			break;
+		}		
+		case WM_WINDOWPOSCHANGING: 
+		{ // suppress whatever is changing the window size on resolution change
+			wndpos = (WINDOWPOS*)lParam;
+			if( wndpos->x || wndpos->y || wndpos->cx || wndpos->cy ){
+				wndpos->x = 0;
+				wndpos->y = 0;
+				wndpos->cx = 640;
+				wndpos->cy = 480;
+				return 0;
+			}
+			break;
+		}
+		case WM_SYSKEYDOWN:
+		{
+			if( wParam == VK_RETURN ){ // alt + enter 
+				if( IsWindowed == FALSE ){
+					IsWindowed = TRUE;
+					ChangeDisplaySettings( NULL, 0 );
+				}
+				else{
+					IsWindowed = FALSE;
+					SetResolution_640x480();
+				}
+				return 0;
+			}
+			break;
 		}
 	}
 
-	if( ( uMsg == WM_SYSKEYDOWN ) && (wParam == VK_RETURN) ){ // alt + enter 
-		// note: why doesn't it work correctly with out SetWindowPos???
-		if( IsWindowed == FALSE ){
-			IsWindowed = TRUE;
-			ChangeDisplaySettings( NULL, 0 );
-			SetWindowPos( hwnd_main, HWND_TOPMOST, 0, 0, 640, 480, SWP_SHOWWINDOW );
-		}
-		else{
-			IsWindowed = FALSE;
-			SetResolution_640x480();
-			SetWindowPos( hwnd_main, HWND_TOPMOST, 0, 0, 640, 480, SWP_SHOWWINDOW );		
-		}
-		return 0;
-	}
-	
 	return CallWindowProc( Main_Original, hWnd, uMsg, wParam, lParam );
 }
 
@@ -103,13 +116,21 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 	WINDOWPOS* wndpos;
 	CREATESTRUCT* cs;
 	DWORD i;
+	DWORD style;
 
 	switch( msg )
 	{
+		case WM_WINDOWPOSCHANGED:
+		{ 
+			for( i = 0; i < SDlgDialog_count; i++ ){ 	 
+				RedrawWindow( SDlgDialog_cache[i].hwnd, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN );
+			}
+			break;
+		}
 		case WM_CREATE:
-		{
-			cs = (CREATESTRUCT*)lParam;
+		{			
 			if( SDlgDialog_count < _countof( SDlgDialog_cache ) ){
+				cs = (CREATESTRUCT*)lParam;
 				SDlgDialog_cache[SDlgDialog_count].hwnd = hwnd;
 				SDlgDialog_cache[SDlgDialog_count].cy = cs->cy;
 				SDlgDialog_cache[SDlgDialog_count].cx = cs->cx;
@@ -117,34 +138,28 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 				SDlgDialog_cache[SDlgDialog_count].x = cs->x;
 				SDlgDialog_count++;
 			}
-
-			for( i = 0; i < SDlgDialog_count; i++ ){
-				InvalidateRect( SDlgDialog_cache[i].hwnd, NULL, TRUE );
-			}
-
 			break;
 		}
-		case WM_WINDOWPOSCHANGED: 
-		{
+		case WM_WINDOWPOSCHANGING: 
+		{  // suppress whatever is changing the window size on resolution change
+			// this may break something... 
+			// for instance: the "banner" gets resized post creation...
 			wndpos = (WINDOWPOS*) lParam;
 			for( i = 0; i < SDlgDialog_count; i++ ){
 				if( hwnd == SDlgDialog_cache[i].hwnd ){
-					SDlgDialog_cache[i].cy = wndpos->cy;
-					SDlgDialog_cache[i].cx = wndpos->cx;
-					SDlgDialog_cache[i].y = wndpos->y;
-					SDlgDialog_cache[i].x = wndpos->x;
-					break;
+					wndpos->cy = SDlgDialog_cache[i].cy;
+					wndpos->cx = SDlgDialog_cache[i].cx;
+					wndpos->y = SDlgDialog_cache[i].y;
+					wndpos->x = SDlgDialog_cache[i].x;
+					return 0;
 				}
 			}
 			break;
 		}
 		case WM_DESTROY:
 		{
-			ShowWindow( hwnd, SW_HIDE );
 			for( i = 0; i < SDlgDialog_count; i++ ){
-				if( hwnd != SDlgDialog_cache[i].hwnd ){
-					InvalidateRect( SDlgDialog_cache[i].hwnd, NULL, TRUE );
-				} else {
+				if( hwnd == SDlgDialog_cache[i].hwnd ){ 
 					SDlgDialog_count--;
 					if( i != SDlgDialog_count ){
 						SDlgDialog_cache[i].hwnd = SDlgDialog_cache[SDlgDialog_count].hwnd;

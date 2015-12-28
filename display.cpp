@@ -155,7 +155,7 @@ void set_palette( PALETTEENTRY* colors ){
 }
 
 
-void init( HWND hwnd )
+HRESULT init( HWND hwnd )
 { 
 	HBITMAP hbmp;
 	HRESULT hr;
@@ -193,11 +193,11 @@ void init( HWND hwnd )
 	if( FAILED ( hr ) ) goto fail;
 
 	// success
-	return;
+	return S_OK;
 
 fail:
 	MessageBox( hwnd, "Display Failure!", "aqrit's compat mod", MB_OK );
-	DebugBreak(); // crash and burn
+	return E_FAIL;
 }
 
 

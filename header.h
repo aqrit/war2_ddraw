@@ -21,7 +21,7 @@ extern BYTE* dib_bits;
 extern BYTE client_bits[640*480];
 extern BITMAPINFO256 bmi;
 //
-void init( HWND hwnd ); 
+HRESULT init( HWND hwnd ); 
 void cleanup( void );
 HRESULT lock( LONG* pitch, void** surf_bits );
 void unlock( void* surface ); 

@@ -18,8 +18,7 @@ const DWORD* const IDDPal = ddp_vtbl;
 
 HRESULT __stdcall dd_SetCooperativeLevel( void* This, HWND hWnd, DWORD dwFlags )
 { // "describe how DirectDraw interacts with the display", exclusive or normal
-	init( hWnd );
-	return 0; 
+	return init( hWnd );
 }
 
 HRESULT __stdcall dds_Lock( void* This, LPRECT lpDestRect, LPDDSURFACEDESC lpDDSurfaceDesc, DWORD dwFlags, HANDLE hEvent )
