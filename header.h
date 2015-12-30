@@ -17,7 +17,7 @@ struct BITMAPINFO256
 // display.cpp
 extern HWND hwnd_main;
 extern BOOL IsWindowed;
-extern SHORT prtscn_toggle;
+extern WORD prtscn_toggle;
 extern BYTE* dib_bits;
 extern __declspec(align(128)) BYTE client_bits[640*480];
 extern BITMAPINFO256 bmi;

@@ -34,7 +34,7 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	char class_name[12];
 	RECT rc;
 	WINDOWPOS* wndpos;
-	SHORT key_state;
+	WORD key_state;
 
 	switch( uMsg )
 	{
@@ -125,7 +125,7 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 	WINDOWPOS* wndpos;
 	CREATESTRUCT* cs;
 	DWORD i;
-	SHORT key_state;
+	WORD key_state;
 
 	switch( msg )
 	{

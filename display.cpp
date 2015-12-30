@@ -8,7 +8,7 @@ HWND hwnd_main = NULL;
 BOOL IsWindowed = FALSE;
 
 BOOL import_gdi_bits = FALSE;
-SHORT prtscn_toggle;
+WORD prtscn_toggle;
 
 LPDIRECT3D9 d3d = NULL;
 LPDIRECT3DDEVICE9 device = NULL;
@@ -59,13 +59,12 @@ BITMAPINFO256 bmi = {
 void d3d_blit(void);
 
 ////////////////////////////////////////////////////////////////////////////////
-
 HRESULT lock( LONG* pitch, void** surf_bits )
 {
 	SDLGDIALOG_CACHE_ENTRY* ce;
 	HDC hdc;
 	DWORD i;
-	SHORT key_state;
+	WORD key_state;
 
 	*pitch = 640;
 	*surf_bits = dib_bits;
@@ -74,11 +73,10 @@ HRESULT lock( LONG* pitch, void** surf_bits )
 
 	if( import_gdi_bits == FALSE ){
 		key_state = GetKeyState( VK_SNAPSHOT );
-		if( !(key_state & 0x8000) ){ // if key is up
-			if( ! ( ( key_state & 1 ) ^ prtscn_toggle ) ) return 0;
-			prtscn_toggle ^= 1;
-			// fall thru to import gdi bits for screenshot
-		}
+		// if_not (current_toggle_state ^ is_key_down ^ pev_toggle_state) ret;
+		if( !( ( key_state & 1 ) ^ ( key_state >> 15 ) ^ prtscn_toggle ) ) return 0;
+		// else update prev state then fall thru to import gdi bits for screenshot
+		prtscn_toggle ^= 1;
 	}
 
 	// assumes SDlgDialog_cache is sorted by z-order...(it is sorted by age not z-order)
