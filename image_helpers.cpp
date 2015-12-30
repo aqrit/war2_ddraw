@@ -5,6 +5,10 @@
 __declspec(naked) void __cdecl 
 color_convert( BYTE* src, RGBQUAD* pal, DWORD* dst, DWORD cnt )
 {
+	UNREFERENCED_PARAMETER( src );
+	UNREFERENCED_PARAMETER( pal );
+	UNREFERENCED_PARAMETER( dst );
+	UNREFERENCED_PARAMETER( cnt );
 	__asm
 	{
 		push edi
@@ -57,6 +61,8 @@ color_convert( BYTE* src, RGBQUAD* pal, DWORD* dst, DWORD cnt )
 // then color convert client_bits into d3d_bits
 __declspec(naked) void __stdcall multiblt( DWORD pitch, DWORD* d3d_bits )
 {
+	UNREFERENCED_PARAMETER( pitch );
+	UNREFERENCED_PARAMETER( d3d_bits );
 	__asm {
 	pcmpeqw xmm7, xmm7 
 	push edi

@@ -12,6 +12,7 @@
 
 BOOL __stdcall DllEntryPoint( HINSTANCE hDll, DWORD dwReason, LPVOID lpvReserved )
 {
+	UNREFERENCED_PARAMETER( lpvReserved );
 	if( dwReason == DLL_PROCESS_ATTACH )
 	{
 		DisableThreadLibraryCalls( hDll );

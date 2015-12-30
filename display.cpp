@@ -2,23 +2,29 @@
 #include <d3d9.h>
 #include "header.h"
 
-BOOL import_gdi_bits = FALSE;
 
 HWND hwnd_main = NULL;
 
 BOOL IsWindowed = FALSE;
 
+BOOL import_gdi_bits = FALSE;
+SHORT prtscn_toggle;
+
 LPDIRECT3D9 d3d = NULL;
 LPDIRECT3DDEVICE9 device = NULL;
 LPDIRECT3DSURFACE9 secondary = NULL;
 
- __declspec(align(128)) BYTE client_bits[640*480];
+__declspec(align(128)) BYTE client_bits[640*480];
 BYTE* dib_bits;
 
 HDC hdc_offscreen;
 HBITMAP hbmp_old;
 COLORREF clear_color;
 
+// double buffered (discard) with no vsync seems best,
+// as there doesn't appear to be a way to drop frames while triple buffering w/vsync,
+// ...which might be needed???, 
+// ...since we don't want to alter how many fps the game can draw
 D3DPRESENT_PARAMETERS d3dpp = {
 	d3dpp.BackBufferWidth = 640,   
 	d3dpp.BackBufferHeight = 480,  
@@ -33,7 +39,7 @@ D3DPRESENT_PARAMETERS d3dpp = {
 	d3dpp.AutoDepthStencilFormat = (D3DFORMAT)0,
 	d3dpp.Flags = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER,
 	d3dpp.FullScreen_RefreshRateInHz = D3DPRESENT_RATE_DEFAULT,
-	d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE // D3DPRESENT_INTERVAL_ONE for vsync?
+	d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE
 };
 
 BITMAPINFO256 bmi = {
@@ -54,29 +60,40 @@ void d3d_blit(void);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-
 HRESULT lock( LONG* pitch, void** surf_bits )
 {
 	SDLGDIALOG_CACHE_ENTRY* ce;
 	HDC hdc;
 	DWORD i;
+	SHORT key_state;
 
 	*pitch = 640;
 	*surf_bits = dib_bits;
 
-	if( ( SDlgDialog_count != 0 ) && ( import_gdi_bits != FALSE ) ){
-		for( i = 0; i < SDlgDialog_count; i++ ){ 
-			ce = &SDlgDialog_cache[i];
-			hdc = GetDC( ce->hwnd );
-			BitBlt( hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, hdc, 0, 0, SRCCOPY );
-			ReleaseDC( ce->hwnd, hdc );
+	if( SDlgDialog_count == 0 ) return 0;
+
+	if( import_gdi_bits != FALSE ) goto lbl_get_bits;
+
+	key_state = GetKeyState( VK_SNAPSHOT );
+	if( !(key_state & 0x8000) ){ // if key is up
+		if( ( key_state & 1 ) ^ prtscn_toggle ){ // and different
+			prtscn_toggle ^= 1;
+			goto lbl_get_bits;
 		}
 	}
+	GdiFlush();
+	return 0;
 
-//	if( SDlgDialog_count != 0 ){
-	//	if( 0x8001 & GetAsyncKeyState( VK_SNAPSHOT )){ // if a screenshot is wanted
-// ..... } } 
-		
+lbl_get_bits:
+	// assumes SDlgDialog_cache is sorted by z-order...(it is sorted by age not z-order)
+	// color converts from 32bpp to 8bpp... ( slow, and how trust worthy is gdi to this correctly? )
+	for( i = 0; i < SDlgDialog_count; i++ ){ 
+		ce = &SDlgDialog_cache[i];
+		hdc = GetDC( ce->hwnd );
+		BitBlt( hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, hdc, 0, 0, SRCCOPY );
+		ReleaseDC( ce->hwnd, hdc );
+	}
+	GdiFlush();
 	return 0;
 }
 
@@ -91,19 +108,22 @@ void unlock( void* surface ){
 	if( secondary != NULL ){
 		hr = secondary->LockRect( &rc, NULL, 0 );
 		if( SUCCEEDED( hr ) ){
-			if( SDlgDialog_count != 0 ){
+			if( SDlgDialog_count == 0 ){
+				for( int i = 0; i < 480; i++ ){ // for each scanline
+					color_convert( &dib_bits[i*640], bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
+				}
+			} else {
 				if( import_gdi_bits != FALSE ){
 					for( i = 0; i < SDlgDialog_count; i++ ){
 						ce = &SDlgDialog_cache[i];
 						hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
 						BitBlt( hdc, 0, 0, ce->cx, ce->cy, hdc_offscreen, ce->x, ce->y, SRCCOPY );
 						ReleaseDC( ce->hwnd, hdc );
+						GdiFlush();
 					}
-					// color convert
 					for( int i = 0; i < 480; i++ ){ // for each scanline
 						color_convert( &(((BYTE*)dib_bits)[i*640]), bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
 					}
-
 				} else {
 					for( i = 0; i < SDlgDialog_count; i++ ){
 						ce = &SDlgDialog_cache[i];
@@ -111,13 +131,10 @@ void unlock( void* surface ){
 						GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
 							hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
 						ReleaseDC( ce->hwnd, hdc );
+						GdiFlush();
 					}
 					multiblt( rc.Pitch, (DWORD*) rc.pBits );
 				} 
-			} else {
-				for( int i = 0; i < 480; i++ ){ // for each scanline
-					color_convert( &dib_bits[i*640], bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
-				}
 			}
 			secondary->UnlockRect();
 			hr = device->Present(NULL, NULL, NULL, NULL);

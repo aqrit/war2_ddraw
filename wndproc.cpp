@@ -27,7 +27,6 @@ WNDPROC Combobox_Original = NULL;
 LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
 LRESULT __stdcall SDlgStatic_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
 
-// touchy
 #pragma intrinsic( memcmp )
 long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 {
@@ -35,17 +34,25 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	char class_name[12];
 	RECT rc;
 	WINDOWPOS* wndpos;
+	SHORT key_state;
 
 	switch( uMsg )
 	{
 		case WM_ACTIVATEAPP: // gain/lost focus from/to another app
 		{
-			if( IsWindowed == FALSE ){ // if fullscreen
-				if( wParam == FALSE ){
+			if( wParam == FALSE ){ // lost focus
+				if( IsWindowed == FALSE ){ // if fullscreen
 					ShowWindow( hWnd, SW_MINIMIZE );
 					ChangeDisplaySettings( NULL, 0 );
+				} else {
+					return 0; // eat message if windowed
 				}
-				else{
+			} else { // gained focus
+				if( SDlgDialog_count != 0 ){
+					key_state = GetKeyState( VK_SNAPSHOT );
+					prtscn_toggle = ( key_state & 1 ) ^ ( key_state >> 15 );
+				}
+				if( IsWindowed == FALSE ){ // if fullscreen
 					ShowWindow( hWnd, SW_RESTORE );
 					SetResolution_640x480();
 				}
@@ -66,6 +73,8 @@ long __stdcall Main_Hookproc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 							SDlgDialog_cache[SDlgDialog_count].cx = rc.right - rc.left;
 							SDlgDialog_cache[SDlgDialog_count].y = rc.top;
 							SDlgDialog_cache[SDlgDialog_count].x = rc.left;
+							key_state = GetKeyState( VK_SNAPSHOT );
+							prtscn_toggle = ( key_state & 1 ) ^ ( key_state >> 15 );
 							SDlgDialog_count = 1;
 						}
 						hwnd_temp = CreateWindow( "SDlgStatic", 0, WS_POPUP, 0, 0, 1, 1, NULL, NULL, 0, NULL );
@@ -116,7 +125,7 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 	WINDOWPOS* wndpos;
 	CREATESTRUCT* cs;
 	DWORD i;
-	DWORD style;
+	SHORT key_state;
 
 	switch( msg )
 	{
@@ -128,8 +137,12 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 			break;
 		}
 		case WM_CREATE:
-		{			
+		{		
 			if( SDlgDialog_count < _countof( SDlgDialog_cache ) ){
+				if( SDlgDialog_count == 0 ){
+					key_state = GetKeyState( VK_SNAPSHOT );
+					prtscn_toggle = ( key_state & 1 ) ^ ( key_state >> 15 );
+				}
 				cs = (CREATESTRUCT*)lParam;
 				SDlgDialog_cache[SDlgDialog_count].hwnd = hwnd;
 				SDlgDialog_cache[SDlgDialog_count].cy = cs->cy;
@@ -158,17 +171,21 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 		}
 		case WM_DESTROY:
 		{
-			for( i = 0; i < SDlgDialog_count; i++ ){
-				if( hwnd == SDlgDialog_cache[i].hwnd ){ 
-					SDlgDialog_count--;
-					if( i != SDlgDialog_count ){
-						SDlgDialog_cache[i].hwnd = SDlgDialog_cache[SDlgDialog_count].hwnd;
-						SDlgDialog_cache[i].cy = SDlgDialog_cache[SDlgDialog_count].cy;
-						SDlgDialog_cache[i].cx = SDlgDialog_cache[SDlgDialog_count].cx;
-						SDlgDialog_cache[i].y = SDlgDialog_cache[SDlgDialog_count].y;
-						SDlgDialog_cache[i].x = SDlgDialog_cache[SDlgDialog_count].x;
-					}
-				} 
+			SDlgDialog_count--;
+			if( SDlgDialog_count == 0){
+				GdiFlush();
+				break;
+			}
+			if( hwnd != SDlgDialog_cache[SDlgDialog_count].hwnd ){ // expect FILO mostly
+				for( i = 0; hwnd != SDlgDialog_cache[i].hwnd; i++ );
+				while( i != SDlgDialog_count ){ // remove entry, compact list (retain order)
+					SDlgDialog_cache[i].hwnd = SDlgDialog_cache[i+1].hwnd;
+					SDlgDialog_cache[i].cy   = SDlgDialog_cache[i+1].cy;
+					SDlgDialog_cache[i].cx   = SDlgDialog_cache[i+1].cx;
+					SDlgDialog_cache[i].y    = SDlgDialog_cache[i+1].y;
+					SDlgDialog_cache[i].x    = SDlgDialog_cache[i+1].x;
+					i = i+1;
+				}
 			}
 			break;
 		}
