@@ -72,21 +72,17 @@ HRESULT lock( LONG* pitch, void** surf_bits )
 
 	if( SDlgDialog_count == 0 ) return 0;
 
-	if( import_gdi_bits != FALSE ) goto lbl_get_bits;
-
-	key_state = GetKeyState( VK_SNAPSHOT );
-	if( !(key_state & 0x8000) ){ // if key is up
-		if( ( key_state & 1 ) ^ prtscn_toggle ){ // and different
+	if( import_gdi_bits == FALSE ){
+		key_state = GetKeyState( VK_SNAPSHOT );
+		if( !(key_state & 0x8000) ){ // if key is up
+			if( ! ( ( key_state & 1 ) ^ prtscn_toggle ) ) return 0;
 			prtscn_toggle ^= 1;
-			goto lbl_get_bits;
+			// fall thru to import gdi bits for screenshot
 		}
 	}
-	GdiFlush();
-	return 0;
 
-lbl_get_bits:
 	// assumes SDlgDialog_cache is sorted by z-order...(it is sorted by age not z-order)
-	// color converts from 32bpp to 8bpp... ( slow, and how trust worthy is gdi to this correctly? )
+	// color converts from 32bpp to 8bpp... ( slow, is gdi trust worthy for this? )
 	for( i = 0; i < SDlgDialog_count; i++ ){ 
 		ce = &SDlgDialog_cache[i];
 		hdc = GetDC( ce->hwnd );
