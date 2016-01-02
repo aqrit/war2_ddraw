@@ -1,8 +1,8 @@
 #include <windows.h>
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION    0,0,0,3
-PRODUCTVERSION 0,0,0,3
+FILEVERSION    0,0,0,4
+PRODUCTVERSION 0,0,0,4
 FILEFLAGSMASK  63
 FILEFLAGS      0
 FILEOS         VOS_UNKNOWN
@@ -14,7 +14,7 @@ FILESUBTYPE    VFT2_UNKNOWN
 		BLOCK "040904E4" /* LANG_ENGLISH/SUBLANG_DEFAULT, CP 1252 */
 		{
 			VALUE "FileDescription", "compatibility ddraw proxy for war2bne"
-			VALUE "FileVersion", "0.3"
+			VALUE "FileVersion", "0.4"
 			VALUE "LegalCopyright", "www.bitpatch.com"
 		}
     }

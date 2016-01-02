@@ -144,6 +144,10 @@
 			>
 		</File>
 		<File
+			RelativePath=".\PaletteShader.h"
+			>
+		</File>
+		<File
 			RelativePath=".\resource.rc"
 			>
 		</File>

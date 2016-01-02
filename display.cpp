@@ -1,7 +1,7 @@
 #include <windows.h>
 #include <d3d9.h>
 #include "header.h"
-
+#include "PaletteShader.h"
 
 HWND hwnd_main = NULL;
 
@@ -11,8 +11,11 @@ BOOL import_gdi_bits = FALSE;
 WORD prtscn_toggle;
 
 LPDIRECT3D9 d3d = NULL;
-LPDIRECT3DDEVICE9 device = NULL;
-LPDIRECT3DSURFACE9 secondary = NULL;
+LPDIRECT3DDEVICE9 d3ddev = NULL;
+LPDIRECT3DVERTEXBUFFER9 d3dvb = NULL;
+IDirect3DTexture9* d3dtex = NULL;
+IDirect3DTexture9* d3dpal = NULL;
+IDirect3DPixelShader9* shader = NULL;
 
 __declspec(align(128)) BYTE client_bits[640*480];
 BYTE* dib_bits;
@@ -36,8 +39,8 @@ D3DPRESENT_PARAMETERS d3dpp = {
 	d3dpp.hDeviceWindow = 0,
 	d3dpp.Windowed = TRUE,   
 	d3dpp.EnableAutoDepthStencil = FALSE,
-	d3dpp.AutoDepthStencilFormat = (D3DFORMAT)0,
-	d3dpp.Flags = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER,
+	d3dpp.AutoDepthStencilFormat = D3DFMT_UNKNOWN,
+	d3dpp.Flags = 0,
 	d3dpp.FullScreen_RefreshRateInHz = D3DPRESENT_RATE_DEFAULT,
 	d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE
 };
@@ -56,7 +59,16 @@ BITMAPINFO256 bmi = {
 	bmi.h.biClrImportant = 0 
 };
 
-void d3d_blit(void);
+
+#define CUSTOMFVF (D3DFVF_XYZRHW | D3DFVF_TEX1)
+struct CUSTOMVERTEX {float x, y, z, rhw, u, v;};
+CUSTOMVERTEX vertices[] =
+{
+	{   0.0f - 0.5f, 480.0f - 0.5f, 0.0f, 1.0f, 0.0f,             480.0f / 1024.0f },
+	{   0.0f - 0.5f,   0.0f - 0.5f, 0.0f, 1.0f, 0.0f,             0.0f             },
+	{ 640.0f - 0.5f, 480.0f - 0.5f, 0.0f, 1.0f, 640.0f / 1024.0f, 480.0f / 1024.0f },
+	{ 640.0f - 0.5f,   0.0f - 0.5f, 0.0f, 1.0f, 640.0f / 1024.0f, 0.0f             }
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 HRESULT lock( LONG* pitch, void** surf_bits )
@@ -65,11 +77,20 @@ HRESULT lock( LONG* pitch, void** surf_bits )
 	HDC hdc;
 	DWORD i;
 	WORD key_state;
+	HRESULT hr;
+	D3DLOCKED_RECT lock_rc;
+	RECT rc = { 0,0,640,480 };
+
+	if( SDlgDialog_count == 0 )
+	{
+		hr = d3dtex->LockRect( 0, &lock_rc, &rc, 0 );
+		*pitch = lock_rc.Pitch;
+		*surf_bits = lock_rc.pBits;
+		return hr;
+	}
 
 	*pitch = 640;
 	*surf_bits = dib_bits;
-
-	if( SDlgDialog_count == 0 ) return 0;
 
 	if( import_gdi_bits == FALSE ){
 		key_state = GetKeyState( VK_SNAPSHOT );
@@ -96,44 +117,42 @@ void unlock( void* surface ){
 	HDC hdc;
 	DWORD i;
 	SDLGDIALOG_CACHE_ENTRY* ce;
-	D3DLOCKED_RECT rc;
-	HRESULT hr;
+	D3DLOCKED_RECT lock_rc;
+	RECT rc = { 0,0,640,480 };
 
-	if( secondary != NULL ){
-		hr = secondary->LockRect( &rc, NULL, 0 );
-		if( SUCCEEDED( hr ) ){
-			if( SDlgDialog_count == 0 ){
-				for( int i = 0; i < 480; i++ ){ // for each scanline
-					color_convert( &dib_bits[i*640], bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
-				}
-			} else {
-				if( import_gdi_bits != FALSE ){
-					for( i = 0; i < SDlgDialog_count; i++ ){
-						ce = &SDlgDialog_cache[i];
-						hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
-						BitBlt( hdc, 0, 0, ce->cx, ce->cy, hdc_offscreen, ce->x, ce->y, SRCCOPY );
-						ReleaseDC( ce->hwnd, hdc );
-						GdiFlush();
-					}
-					for( int i = 0; i < 480; i++ ){ // for each scanline
-						color_convert( &(((BYTE*)dib_bits)[i*640]), bmi.palette, (DWORD*)(((BYTE*)rc.pBits) + (rc.Pitch * i)), 640/4 );
-					}
-				} else {
-					for( i = 0; i < SDlgDialog_count; i++ ){
-						ce = &SDlgDialog_cache[i];
-						hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
-						GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
-							hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
-						ReleaseDC( ce->hwnd, hdc );
-						GdiFlush();
-					}
-					multiblt( rc.Pitch, (DWORD*) rc.pBits );
-				} 
+	if( surface != dib_bits ){
+		d3dtex->UnlockRect(0);
+		d3ddev->BeginScene();
+		d3ddev->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0, 2);
+	    d3ddev->EndScene();
+		if( FAILED( d3ddev->Present(NULL, NULL, NULL, NULL) ) ) d3d_reset();
+		return;
+	}
+
+	if( SUCCEEDED( d3dtex->LockRect( 0, &lock_rc, &rc, 0 ) ) ){
+		if( import_gdi_bits != FALSE ){
+			for( i = 0; i < SDlgDialog_count; i++ ){
+				ce = &SDlgDialog_cache[i];
+				hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
+				BitBlt( hdc, 0, 0, ce->cx, ce->cy, hdc_offscreen, ce->x, ce->y, SRCCOPY );
+				ReleaseDC( ce->hwnd, hdc );
+				GdiFlush();
 			}
-			secondary->UnlockRect();
-			hr = device->Present(NULL, NULL, NULL, NULL);
+			for( int i = 0; i < 480; i++ ){ // for each scanline
+				color_convert( &(((BYTE*)dib_bits)[i*640]), bmi.palette, (DWORD*)(((BYTE*)lock_rc.pBits) + (lock_rc.Pitch * i)), 640/4 );
+			}
+		} else {
+			for( i = 0; i < SDlgDialog_count; i++ ){
+				ce = &SDlgDialog_cache[i];
+				hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
+				GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
+					hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
+				ReleaseDC( ce->hwnd, hdc );
+				GdiFlush();
+			}
+			multiblt( lock_rc.Pitch, (DWORD*) lock_rc.pBits );
 		}
-		if( FAILED( hr ) ) return d3d_reset();
+		return unlock( lock_rc.pBits );
 	}
 }
 
@@ -142,9 +161,14 @@ void cleanup( void )
 	; // todo
 }
 
-#pragma intrinsic( _byteswap_ulong )
+#pragma intrinsic( _byteswap_ulong, memcpy )
 void set_palette( PALETTEENTRY* colors ){
 	DWORD i;
+	D3DLOCKED_RECT lock_rc;
+	RECT rc = { 0,0,256,1 };
+
+	// not to speed critical here...
+	// so don't diff between "in-game" and "bnet menu" modes
 
 	for( i = 0; i < 256; i++ )
 	{ // convert 0xFFBBGGRR to 0x00RRGGBB ( X8R8G8B8 )
@@ -152,24 +176,24 @@ void set_palette( PALETTEENTRY* colors ){
 		*((DWORD*)&bmi.palette[i]) = _byteswap_ulong( *(DWORD*)&colors[i] ) >> 8;
 	}
 
-	// probably best to keep this in sync even if not in mixed_mode
+	if( SUCCEEDED( d3dpal->LockRect( 0, &lock_rc, &rc, 0 ) ) ){	
+		memcpy( lock_rc.pBits, bmi.palette, 4 * 256 );
+		d3dpal->UnlockRect(0);
+	}
+	
 	clear_color = *((DWORD*)&colors[254]) & 0x00FFFFFF;
 	SetDIBColorTable( hdc_offscreen, 0, 256, bmi.palette );
 
 	// animate palette
-	unlock( client_bits );
-
-	// HACK // 
-	// not drawing main menu after movie? 
-	// this still isn't fix 100% ...
-	InvalidateRect( hwnd_main, NULL, TRUE );
+	unlock(0);
 }
 
-
+#pragma intrinsic( memcpy )
 HRESULT init( HWND hwnd )
 { 
 	HBITMAP hbmp;
 	HRESULT hr;
+	void* vb;
 
 	hwnd_main = hwnd;
 	d3dpp.hDeviceWindow = hwnd;
@@ -196,12 +220,61 @@ HRESULT init( HWND hwnd )
 
 	// init d3d
 	// must not be exclusive, to keep gdi drawing visible 
-	d3d = Direct3DCreate9( D3D_SDK_VERSION );
-	if( d3d == NULL ) goto fail;
-	hr = d3d->CreateDevice( D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd, D3DCREATE_SOFTWARE_VERTEXPROCESSING, &d3dpp, &device );
+    d3d = Direct3DCreate9(D3D_SDK_VERSION);
+	if(!d3d) goto fail;
+
+	hr = d3d->CreateDevice( D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd, 
+		D3DCREATE_NOWINDOWCHANGES | D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_PUREDEVICE,
+		&d3dpp, &d3ddev );
 	if( FAILED ( hr ) ) goto fail;	
-	hr = device->GetBackBuffer( 0, 0, D3DBACKBUFFER_TYPE_MONO, &secondary );
+
+	hr = d3ddev->SetFVF(CUSTOMFVF);
 	if( FAILED ( hr ) ) goto fail;
+
+	hr = d3ddev->CreateVertexBuffer( sizeof(vertices), 0, CUSTOMFVF, D3DPOOL_MANAGED, &d3dvb, NULL );
+	if( FAILED ( hr ) ) goto fail;	
+
+    hr = d3dvb->Lock(0, 0, (void**)&vb, 0);
+	if( FAILED ( hr ) ) goto fail;
+
+    memcpy(vb, vertices, sizeof(vertices));
+    
+	hr = d3dvb->Unlock();
+	if( FAILED ( hr ) ) goto fail;
+
+	hr = d3ddev->SetStreamSource(0, d3dvb, 0, sizeof(CUSTOMVERTEX));
+	if( FAILED ( hr ) ) goto fail;
+
+	// todo: NPOT if supported
+	hr = d3ddev->CreateTexture( 1024, 1024, 1, 0, D3DFMT_L8, D3DPOOL_MANAGED, &d3dtex, 0 );
+	if( FAILED ( hr ) ) goto fail;
+
+	hr = d3ddev->SetTexture( 0, d3dtex );
+	if( FAILED ( hr ) ) goto fail;
+
+	// todo: NPOT if supported
+	hr = d3ddev->CreateTexture( 256, 256, 1, 0, D3DFMT_X8R8G8B8, D3DPOOL_MANAGED, &d3dpal, 0 );
+	if( FAILED ( hr ) ) goto fail;
+
+	hr = d3ddev->SetTexture( 1, d3dpal );
+	if( FAILED ( hr ) ) goto fail;
+
+	hr = d3ddev->CreatePixelShader((DWORD*)g_ps20_main, &shader);
+	if( FAILED ( hr ) ) goto fail;
+
+	hr = d3ddev->SetPixelShader(shader);
+	if( FAILED ( hr ) ) goto fail;
+
+	// ...?
+    d3ddev->SetRenderState(D3DRS_LIGHTING, FALSE);
+    d3ddev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+	d3ddev->SetRenderState(D3DRS_COLORVERTEX, FALSE);
+	d3ddev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    d3ddev->SetRenderState(D3DRS_ZENABLE, FALSE);
+	// ...?
+	d3ddev->SetSamplerState(0,D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+	d3ddev->SetSamplerState(0,D3DSAMP_MINFILTER, D3DTEXF_POINT);
+	d3ddev->SetSamplerState(0,D3DSAMP_MIPFILTER, D3DTEXF_NONE);
 
 	// success
 	return S_OK;
@@ -228,19 +301,35 @@ BOOL SetResolution_640x480(void)
 	return FALSE;
 }
 
+#pragma intrinsic( memcpy )
 void d3d_reset(void)
 {
-	if( secondary != NULL )
+	void* vb;
+
+	if( SUCCEEDED( d3ddev->Reset( &d3dpp ) ) )
 	{
-		secondary->Release();
-		secondary = NULL;
-	}
-	if( SUCCEEDED( device->Reset( &d3dpp ) ) )
-	{
-		if( SUCCEEDED(  device->GetBackBuffer( 0, 0, D3DBACKBUFFER_TYPE_MONO, &secondary ) ) )
-		{
-			; //
+		d3ddev->SetFVF(CUSTOMFVF);
+		d3ddev->SetStreamSource(0, d3dvb, 0, sizeof(CUSTOMVERTEX));
+		d3ddev->SetTexture( 0, d3dtex );
+		d3ddev->SetTexture( 1, d3dpal );
+		d3ddev->SetPixelShader(shader);
+	
+		// ...?
+		d3ddev->SetRenderState(D3DRS_LIGHTING, FALSE);
+		d3ddev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		d3ddev->SetRenderState(D3DRS_COLORVERTEX, FALSE);
+		d3ddev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		d3ddev->SetRenderState(D3DRS_ZENABLE, FALSE);
+		// ...?
+		d3ddev->SetSamplerState(0,D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+		d3ddev->SetSamplerState(0,D3DSAMP_MINFILTER, D3DTEXF_POINT);
+		d3ddev->SetSamplerState(0,D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+
+		if( SUCCEEDED( d3dvb->Lock(0, 0, (void**)&vb, 0) ) ) {
+			memcpy(vb, vertices, sizeof(vertices));
+			d3dvb->Unlock();
 		}
+
 	}
 	else Sleep( 100 );
 }
