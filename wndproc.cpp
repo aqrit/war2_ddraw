@@ -172,20 +172,13 @@ LRESULT __stdcall SDlgDialog_Hookproc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 		case WM_DESTROY:
 		{
 			SDlgDialog_count--;
-			if( SDlgDialog_count == 0){
-				GdiFlush();
-				break;
-			}
-			if( hwnd != SDlgDialog_cache[SDlgDialog_count].hwnd ){ // expect FILO mostly
-				for( i = 0; hwnd != SDlgDialog_cache[i].hwnd; i++ );
-				while( i != SDlgDialog_count ){ // remove entry, compact list (retain order)
-					SDlgDialog_cache[i].hwnd = SDlgDialog_cache[i+1].hwnd;
-					SDlgDialog_cache[i].cy   = SDlgDialog_cache[i+1].cy;
-					SDlgDialog_cache[i].cx   = SDlgDialog_cache[i+1].cx;
-					SDlgDialog_cache[i].y    = SDlgDialog_cache[i+1].y;
-					SDlgDialog_cache[i].x    = SDlgDialog_cache[i+1].x;
-					i = i+1;
-				}
+			for( i = SDlgDialog_count; hwnd != SDlgDialog_cache[i].hwnd; i-- ){ ; } // search list
+			for( ; i < SDlgDialog_count; i++ ){ // remove entry, compact list (retain order)
+				SDlgDialog_cache[i].hwnd = SDlgDialog_cache[i+1].hwnd;
+				SDlgDialog_cache[i].cy   = SDlgDialog_cache[i+1].cy;
+				SDlgDialog_cache[i].cx   = SDlgDialog_cache[i+1].cx;
+				SDlgDialog_cache[i].y    = SDlgDialog_cache[i+1].y;
+				SDlgDialog_cache[i].x    = SDlgDialog_cache[i+1].x;
 			}
 			break;
 		}

@@ -136,8 +136,8 @@ void unlock( void* surface ){
 				hdc = GetDCEx( ce->hwnd, NULL, DCX_PARENTCLIP | DCX_CACHE );
 				BitBlt( hdc, 0, 0, ce->cx, ce->cy, hdc_offscreen, ce->x, ce->y, SRCCOPY );
 				ReleaseDC( ce->hwnd, hdc );
-				GdiFlush();
 			}
+			GdiFlush();
 			for( int i = 0; i < 480; i++ ){ // for each scanline
 				color_convert( &(((BYTE*)dib_bits)[i*640]), bmi.palette, (DWORD*)(((BYTE*)lock_rc.pBits) + (lock_rc.Pitch * i)), 640/4 );
 			}
@@ -148,8 +148,8 @@ void unlock( void* surface ){
 				GdiTransparentBlt( hdc, 0, 0, ce->cx, ce->cy, 
 					hdc_offscreen, ce->x, ce->y, ce->cx, ce->cy, clear_color );
 				ReleaseDC( ce->hwnd, hdc );
-				GdiFlush();
 			}
+			GdiFlush();
 			multiblt( lock_rc.Pitch, (DWORD*) lock_rc.pBits );
 		}
 		return unlock( lock_rc.pBits );
