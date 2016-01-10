@@ -93,7 +93,6 @@
 			/>
 			<Tool
 				Name="VCManifestTool"
-				AdditionalManifestFiles="dpiaware.manifest"
 			/>
 			<Tool
 				Name="VCXDCMakeTool"
@@ -116,43 +115,7 @@
 	</References>
 	<Files>
 		<File
-			RelativePath=".\ddraw.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\dev_readme.txt"
-			>
-		</File>
-		<File
-			RelativePath=".\display.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\dllmain.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\dpiaware.manifest"
-			>
-		</File>
-		<File
-			RelativePath=".\header.h"
-			>
-		</File>
-		<File
-			RelativePath=".\image_helpers.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\PaletteShader.h"
-			>
-		</File>
-		<File
-			RelativePath=".\resource.rc"
-			>
-		</File>
-		<File
-			RelativePath=".\wndproc.cpp"
+			RelativePath=".\minimal.cpp"
 			>
 		</File>
 	</Files>
