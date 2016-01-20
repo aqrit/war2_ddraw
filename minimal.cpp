@@ -39,14 +39,13 @@ BOOL __stdcall gdi_to_ddraw( HWND hwnd, LPARAM lParam ){
 // EnumThreadWindows callback for dd->Unlock
 BOOL __stdcall ddraw_to_gdi( HWND hwnd, LPARAM lParam ){
 	RECT rc;
+	HRGN hrgn_temp;
 	GetWindowRect( hwnd, &rc );
 	HRGN hrgn = CreateRectRgnIndirect( &rc );
-	// xor swap... but merge x and y in the last step instead of isolating y
-	CombineRgn( hrgn_acc, hrgn_acc, hrgn, RGN_XOR );
-	CombineRgn( hrgn, hrgn_acc, hrgn, RGN_XOR );
-	CombineRgn( hrgn_acc, hrgn_acc, hrgn, RGN_OR );
-	// apparently GetDCEx expects hrgn in screen coords.. ??
-	// the OS assumes ownership of hrgn during GetDCEx() so don't touch and/or delete it.
+	CombineRgn( hrgn, hrgn_acc, hrgn, RGN_OR );
+	hrgn_temp = hrgn;
+	hrgn = hrgn_acc;
+	hrgn_acc = hrgn_temp;
 	HDC hdc = GetDCEx( hwnd, hrgn, DCX_EXCLUDERGN | DCX_CACHE );
 	BitBlt( hdc, 0, 0, rc.right - rc.left, rc.bottom - rc.top, (HDC)lParam, rc.left, rc.top, SRCCOPY );
 	ReleaseDC( hwnd, hdc );
