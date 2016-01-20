@@ -10,6 +10,7 @@
 #include <ddraw.h>
 
 HWND hwnd_main;
+HRGN hrgn_acc;
 
 IDirectDraw* ddraw;
 IDirectDrawSurface* dds_primary;
@@ -22,52 +23,43 @@ const DWORD* const IDDSurf = dds_vtbl;
 const DWORD* const IDDPal = ddp_vtbl;
 typedef HRESULT (__stdcall* DIRECTDRAWCREATE)( GUID*, IDirectDraw**, IUnknown* );
 
-WNDPROC ButtonWndProc_original;
 
-// enum top-level thread windows by z-order ( top to bottom... hopefully )
+// EnumThreadWindows callback for dd->Lock 
+// top-level thread windows are enum'd by z-order ( top to bottom... hopefully )
 BOOL __stdcall gdi_to_ddraw( HWND hwnd, LPARAM lParam ){	
 	RECT rc;
-	if( hwnd != hwnd_main ){
-		if( GetWindowRect( hwnd, &rc ) ){
-			HDC hdc = GetDCEx( hwnd, NULL, DCX_CLIPSIBLINGS | DCX_CACHE );
-			BitBlt( (HDC)lParam, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, hdc, 0, 0, SRCCOPY );
-			ReleaseDC( hwnd, hdc );
-			ExcludeClipRect( (HDC)lParam, rc.left, rc.top, rc.right, rc.bottom );
-		}
-	}
+	GetWindowRect( hwnd, &rc );
+	HDC hdc = GetDCEx( hwnd, NULL, DCX_CACHE );
+	BitBlt( (HDC)lParam, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, hdc, 0, 0, SRCCOPY );
+	ReleaseDC( hwnd, hdc );
+	ExcludeClipRect( (HDC)lParam, rc.left, rc.top, rc.right, rc.bottom );
 	return TRUE;
 }
 
+// EnumThreadWindows callback for dd->Unlock
 BOOL __stdcall ddraw_to_gdi( HWND hwnd, LPARAM lParam ){
 	RECT rc;
-	if( hwnd != hwnd_main ){
-		if( GetWindowRect( hwnd, &rc ) ){
-			HDC hdc = GetDCEx( hwnd, NULL, DCX_CLIPSIBLINGS | DCX_CACHE );
-			BitBlt( hdc, 0, 0, rc.right - rc.left, rc.bottom - rc.top, (HDC)lParam, rc.left, rc.top, SRCCOPY );
-			ReleaseDC( hwnd, hdc );
-		}
-	}
+	GetWindowRect( hwnd, &rc );
+	HRGN hrgn = CreateRectRgnIndirect( &rc );
+	// xor swap... but merge x and y in the last step instead of isolating y
+	CombineRgn( hrgn_acc, hrgn_acc, hrgn, RGN_XOR );
+	CombineRgn( hrgn, hrgn_acc, hrgn, RGN_XOR );
+	CombineRgn( hrgn_acc, hrgn_acc, hrgn, RGN_OR );
+	// apparently GetDCEx expects hrgn in screen coords.. ??
+	// the OS assumes ownership of hrgn during GetDCEx() so don't touch and/or delete it.
+	HDC hdc = GetDCEx( hwnd, hrgn, DCX_EXCLUDERGN | DCX_CACHE );
+	BitBlt( hdc, 0, 0, rc.right - rc.left, rc.bottom - rc.top, (HDC)lParam, rc.left, rc.top, SRCCOPY );
+	ReleaseDC( hwnd, hdc );
 	return TRUE;
-}
-
-// kludge
-LRESULT __stdcall ButtonWndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
-{
-	if( msg == WM_DESTROY ) RedrawWindow( HWND_DESKTOP, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_ALLCHILDREN );
-	return ButtonWndProc_original( hwnd, msg, wParam, lParam );
 }
 
 BOOL __stdcall DllEntryPoint( HINSTANCE hDll, DWORD dwReason, LPVOID lpvReserved ){
 	if( dwReason == DLL_PROCESS_ATTACH ){
 		DisableThreadLibraryCalls( hDll );
-		
-		WNDCLASS wc;
-		HINSTANCE hInst = GetModuleHandle( NULL );
-		GetClassInfo( NULL, "Button", &wc );
-		wc.hInstance = hInst;
-		ButtonWndProc_original = wc.lpfnWndProc;
-		wc.lpfnWndProc = ButtonWndProc;
-		RegisterClass( &wc ); // super class
+		hrgn_acc = CreateRectRgn( 0,0,0,0 );
+	}
+	if( dwReason == DLL_PROCESS_DETACH ){
+		DeleteObject( hrgn_acc );
 	}
 	return TRUE;
 }
@@ -111,6 +103,7 @@ HRESULT __stdcall dds_Unlock( void* This, LPVOID lpSurfMemPtr ){
 	if( ( hwnd_main != hwnd ) && ( hwnd != NULL ) ){
 		HDC hdc_dds;
 		if( SUCCEEDED( dds_primary->GetDC( &hdc_dds ) ) ){
+			SetRectRgn( hrgn_acc, 0,0,0,0 );
 			EnumThreadWindows( GetCurrentThreadId(), ddraw_to_gdi, (LPARAM)hdc_dds );
 			dds_primary->ReleaseDC( hdc_dds );
 		}
